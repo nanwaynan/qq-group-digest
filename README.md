@@ -16,7 +16,7 @@
 > - **图片保留** —— 群里的重要图片会存到本地并在总结中内嵌，不再是一排 `[图片]` 占位符。
 > - **多群支持** —— 配置里加几个群就总结几个群，一次跑完。
 > - **微信版、图形界面** 在计划中，见文末「开发计划」。
-> - 只想快速跑起来？直接看「快速开始」四步，配合 `python qq_digest.py --check` 自检。
+> - **完全不懂电脑？** 照着下面「手把手教程」一步步抄就行，每一步点什么、填什么都写清了。
 
 > ## ⚠️ 使用前提（务必先读）
 > 本工具只读取**你登录的 QQ 账号有权查看**的群聊记录，请遵守当地法律法规与平台用户协议，仅用于整理自己有权访问的群聊；使用产生的一切后果由使用者自行承担。完整说明见文末免责声明。
@@ -38,23 +38,67 @@
 - 🩺 **一条命令自检** —— `--check` 验证 NapCat、登录账号、群成员身份、AI 接口、输出目录
 - 🙈 **Key 不出本机** —— 首次运行向导式输入，Key 只写进本地 `config.json`（已被 .gitignore 排除），全文可审计
 
-## 快速开始
+## 手把手教程（零基础照着做就行）
 
-前置条件：Python 3.10+；一个 OpenAI 兼容的大模型 API（地址 + 模型名 + Key）。
+> 已经会装软件跑脚本的老手，直接看「命令行」一节即可。
 
-1. **部署 NapCat，用 QQ 小号登录** —— 安装新版 QQ（NTQQ）→ 按 [NapCat 官方文档](https://napneko.github.io/) 安装 → 小号扫码登录 → 建议专门注册一个小号拉进目标群，主号零改动
-2. **给 NapCat 开启 OneBot 11 HTTP 服务** —— WebUI（默认 `http://localhost:6099`）→ 网络配置 → 新建 HTTP 服务器：端口 `3000`、host `127.0.0.1`、开启
-3. **运行配置向导** —— 下载本项目后：
+### 第 1 步：安装 Python（一次性，5 分钟）
 
-   ```bash
-   python qq_digest.py
+1. 打开官网下载页：https://www.python.org/downloads/ → 点黄色大按钮 **Download Python 3.12.x**，得到一个 `.exe` 安装包
+2. 双击安装包，**第一屏最下面务必勾选 ☑ `Add python.exe to PATH`**（很多人卡死在这一步），然后点 `Install Now`，一路下一步
+3. 验证装好了：按键盘 `Win + R` → 输入 `cmd` → 回车，在黑色窗口里输入：
+
+   ```
+   python --version
    ```
 
-   向导依次问你：**NapCat 地址 → 要总结的群号（可多个）→ AI 接口地址 / 模型名 / API Key → 保存目录**，写进本地 `config.json` 后立即开始第一次总结
+   显示 `Python 3.12.x` 之类的版本号就是成功了。如果提示"不是内部或外部命令"，重新运行安装包、勾上那个 PATH 选项再装一遍。
 
-4. **看结果** —— 打开 `output\<群名>\<YYMMDD>\<YYMMDD>.md`；以后每天想总结就再跑一次，或双击 `run.bat`
+### 第 2 步：安装 QQ 和 NapCat，用小号登录（一次性，10 分钟）
 
-> 卡在哪一步？先跑 `python qq_digest.py --check`，它会告诉你 NapCat 通不通、小号在不在群里、AI 接口能不能用。
+1. 安装新版 QQ（NTQQ）：https://im.qq.com/pc_ntqq/index.shtml ，装上并随便登录一次
+2. 安装 NapCat：打开 NapCat 官方文档 https://napneko.github.io/ → 「安装指南」→ 选 Windows，**推荐 NapCat.Shell 方式**，跟着官方文档操作即可
+3. 启动 NapCat，**用你的小号**扫码登录（建议专门注册一个小号拉进目标群，主号零改动）
+4. 给 NapCat 开启接口：浏览器打开 NapCat 管理页（默认 `http://localhost:6099`）→ 「网络配置」→ 新建 **HTTP 服务器** → 端口填 `3000`、host 填 `127.0.0.1` → 开启并保存
+
+> 看不懂第 4 步？NapCat 文档里搜「HTTP 服务器」，有截图教程。这一步的目的：让本工具能通过 3000 端口读到群消息记录。
+
+### 第 3 步：下载本项目（一次性，1 分钟）
+
+打开本仓库页面 → 点绿色 **`Code`** 按钮 → **`Download ZIP`** → 解压到任意位置，比如 `D:\qq-group-digest\`。
+
+（会用 git 的朋友：`git clone https://github.com/nanwaynan/qq-group-digest.git` 效果一样）
+
+### 第 4 步：双击 `启动.bat`，按向导填写（一次性，5 分钟）
+
+双击文件夹里的 **`启动.bat`**，第一次运行会自动进入配置向导。它会依次问你 8 个问题，照着这张表填：
+
+| 向导问你 | 怎么填 | 示例 |
+|---|---|---|
+| NapCat API 地址 | **直接回车**（默认就是本机 3000 端口） | `http://127.0.0.1:3000` |
+| NapCat Token | 上一步没设 token 就**直接回车** | （空） |
+| 要总结的群号 | 填小号所在的那个群的群号（QQ 里打开群聊 → 右上角群资料里能看到） | `123456789` |
+| 群名称/备注 | 随意，会用作文件夹名；直接回车也行 | `技术交流群` |
+| 继续添加其他群？ | 还有群要总结按 `y` 继续加；没有就回车 | `n` |
+| AI 接口地址 | 你的大模型服务商给的「OpenAI 兼容」地址，**结尾带 `/v1`** | `https://api.deepseek.com/v1` |
+| 模型名 | 服务商后台模型列表里的名字 | `deepseek-chat` |
+| API Key | 服务商后台创建的密钥，粘贴后回车（**输入时不显示是防偷看设计，正常**） | `sk-xxxxxxxx` |
+| 总结保存目录 | **直接回车**用默认 | `./output` |
+
+> **没有大模型 API？** 任意「OpenAI 兼容」服务商都行：云端如 DeepSeek、硅基流动、OpenAI 等（注册后在后台创建 Key）；本地如 Ollama（地址填 `http://127.0.0.1:11434/v1`）。本工具只负责把内容发到**你自己填的**这个地址。
+
+填完向导会立刻开始第一次总结，屏幕滚动都是在干活，等它跑完即可。
+
+### 第 5 步：看结果
+
+打开 `output\<群名>\<日期>\` 文件夹，`.md` 文件就是总结（记事本 / VS Code / Typora 都能打开），`images` 文件夹是保留下来的聊天图片。
+
+### 以后每天怎么用
+
+就两件事：
+
+1. 电脑重启过的话，先启动 NapCat 并确认小号在线
+2. 双击 **`启动.bat`**，等跑完去 `output\` 看当天的总结
 
 ## 总结文件放在哪
 
@@ -63,7 +107,7 @@
 ```
 qq-group-digest\
 └─ output\
-   └─ 深度思考\                ← 群名（或群号）
+   └─ 技术交流群\             ← 群名（或群号）
       └─ 261011\
          ├─ 261011.md          ← 总结正文 + 图片 + 完整原始记录
          └─ images\
@@ -146,9 +190,9 @@ python tests/test_mock.py
 ```
 qq-group-digest/
 ├─ qq_digest.py            核心脚本（纯标准库，唯一必需）
+├─ 启动.bat                Windows 双击入口（首次运行自动进配置向导）
 ├─ config.example.json     配置模板（复制为 config.json 使用）
 ├─ config.json             本地配置（含 Key，自动生成，不会上传）
-├─ run.bat                 Windows 双击入口
 ├─ tests/test_mock.py      端到端自测
 ├─ output/                 总结输出（自动生成，不会上传）
 ├─ README.md · LICENSE(MIT) · .gitignore
@@ -165,8 +209,17 @@ qq-group-digest/
 **Q：为什么用小号？**
 主号零改动、零风险。小号拉进目标群即可，拉历史的前提是该账号能看到群历史消息。
 
-**Q：为什么不提供 Docker 镜像？**
-本工具依赖 NapCat 注入**桌面版 QQ**，QQ 必须跑在你的电脑上；总结脚本本身是零依赖单文件，容器化没有收益。真想容器化（如配 NapCat 官方 Docker 版上服务器），无需 Dockerfile：`docker run --rm -v "$(pwd)":/app -w /app python:3.12 python qq_digest.py`
+**Q：双击 `启动.bat` 提示"未找到 Python"？**
+第 1 步的 Python 没装好，多半是没勾 `Add python.exe to PATH`，重新装一遍并勾选。
+
+**Q：总结内容异常偏少或为空？**
+① AI 侧 `max_tokens` 太小，推理模型（DeepSeek-R1 等）思维链吃光预算导致正文为空——把配置里 `max_tokens` 调大；② NapCat 没开 HTTP 服务或 token 不匹配，跑 `--check` 看。
+
+**Q：AI 返回 401 / 404？**
+401 = Key 无效；404 = 地址不对（要含 `/v1`）或模型名不存在。回 `--setup` 重新填。
+
+**Q：为什么不用 Docker？**
+本工具依赖 NapCat 注入**桌面版 QQ**，QQ 必须跑在你的电脑上；总结脚本本身是零依赖单文件，容器化没有收益。真想容器化（如配 NapCat 官方 Docker 版上服务器）：`docker run --rm -v "$(pwd)":/app -w /app python:3.12 python qq_digest.py`
 
 **Q：和 AstrBot 等机器人框架是什么关系？**
 没有关系。本项目不包含、不依赖任何机器人框架的代码，只通过 NapCat 暴露的 OneBot 11 HTTP API 通信。
@@ -187,10 +240,9 @@ qq-group-digest/
 
 ## 交流 & 支持
 
-- **QQ 交流群：`1121243020`** —— 使用问题、更新通知都发在群里
 - **GitHub Issues**：[提问题 / 反馈](https://github.com/nanwaynan/qq-group-digest/issues)
 
-> 跑不通？先执行 `python qq_digest.py --check`，把输出连同报错一起贴上来，定位快很多。
+> 跑不通？先执行 `python qq_digest.py --check`，把输出连同报错一起贴到 Issues，定位快很多。
 
 ## 免责声明
 

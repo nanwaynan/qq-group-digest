@@ -1,0 +1,16 @@
+# 本地配置（含你的 API Key，切勿提交）
+config.json
+*.json.tmp
+
+# 总结输出
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 系统
+Thumbs.db
+.DS_Store

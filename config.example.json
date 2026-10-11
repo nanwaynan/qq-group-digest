@@ -1,0 +1,16 @@
+{
+  "napcat_api": "http://127.0.0.1:3000",
+  "napcat_token": "",
+  "groups": [
+    { "id": "123456789", "name": "示例群" }
+  ],
+  "ai": {
+    "base": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini",
+    "key": "sk-xxxxxxxxxxxxxxxxxxxx"
+  },
+  "output_dir": "./output",
+  "day_start_hour": 12,
+  "chunk_chars": 22000,
+  "max_tokens": 32000
+}

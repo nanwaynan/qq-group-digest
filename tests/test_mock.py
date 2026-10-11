@@ -38,22 +38,33 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _build_messages() -> list[dict]:
-    """构造 N 条落在「今天 12:00 ~ 次日 12:00」区间内的文本消息。"""
+def _build_messages(napcat_port: int) -> list[dict]:
+    """构造 N 条落在「今天 12:00 ~ 次日 12:00」区间内的消息。
+
+    其中 6 条带可下载图片（i % 50 == 0），1 条带失效图片链接（i == 77），
+    用于验证图片下载、编号重排与失败回退。
+    """
     start = dt.datetime.combine(dt.date.today(), dt.time(hour=12, minute=0))
     msgs = []
     for i in range(N_MESSAGES):
         ts = start + dt.timedelta(minutes=4 * i + 60)   # 从 13:00 开始，300 条 ≈ 20 小时，全部落在周期内
+        segs = [{'type': 'text', 'data': {'text': f'消息内容 {i}'}}]
+        if i % 50 == 0:
+            segs.append({'type': 'image',
+                         'data': {'url': f'http://127.0.0.1:{napcat_port}/img/{i}.jpg'}})
+        elif i == 77:
+            segs.append({'type': 'image',
+                         'data': {'url': f'http://127.0.0.1:{napcat_port}/img/broken.jpg'}})
         msgs.append({
             'message_id': 100000 + i,
             'time': int(ts.timestamp()),
             'sender': {'user_id': 1000 + i % 7, 'nickname': f'用户{i % 7}'},
-            'message': [{'type': 'text', 'data': {'text': f'消息内容 {i}'}}],
+            'message': segs,
         })
     return msgs
 
 
-MESSAGES = sorted(_build_messages(), key=lambda m: -m['time'])  # 新 -> 旧
+MESSAGES: list[dict] = []
 
 
 class _QuietHandler(BaseHTTPRequestHandler):
@@ -74,7 +85,20 @@ class _QuietHandler(BaseHTTPRequestHandler):
 
 
 class MockNapCat(_QuietHandler):
-    """按 NapCat 的真实语义实现：message_seq 锚点 + reverse_order 往回翻。"""
+    """按 NapCat 的真实语义实现：message_seq 锚点 + reverse_order 往回翻；
+    另外提供图片下载（/img/*.jpg），broken.jpg 返回 404 模拟失效链接。"""
+
+    def do_GET(self):
+        if self.path.startswith('/img/') and 'broken' not in self.path:
+            body = b'\xff\xd8\xff\xe0' + b'fakejpegdata' * 32
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/jpeg')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def do_POST(self):
         payload = self._body()
@@ -100,13 +124,14 @@ class MockNapCat(_QuietHandler):
 
 
 class MockAI(_QuietHandler):
-    """OpenAI 兼容 /chat/completions，返回固定摘要。"""
+    """OpenAI 兼容 /chat/completions，返回带图片引用的固定摘要。"""
 
     def do_POST(self):
         if self.path.endswith('/chat/completions'):
             self._body()  # 读取并丢弃请求体
+            content = MOCK_SUMMARY + '\n\n大家看这张：[图片#1]'
             self._json({
-                'choices': [{'message': {'content': MOCK_SUMMARY},
+                'choices': [{'message': {'content': content},
                              'finish_reason': 'stop'}],
                 'usage': {'completion_tokens_details': {'reasoning_tokens': 0}},
             })
@@ -120,6 +145,9 @@ class EndToEndTest(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.napcat = ThreadingHTTPServer(('127.0.0.1', _free_port()), MockNapCat)
         cls.ai = ThreadingHTTPServer(('127.0.0.1', _free_port()), MockAI)
+        # 图片 URL 里要带上端口，先起服务再生成消息
+        MESSAGES[:] = sorted(_build_messages(cls.napcat.server_address[1]),
+                             key=lambda m: -m['time'])  # 新 -> 旧
         for srv in (cls.napcat, cls.ai):
             threading.Thread(target=srv.serve_forever, daemon=True).start()
         cls.tmp_path = Path(cls.tmp.name)
@@ -177,15 +205,26 @@ class EndToEndTest(unittest.TestCase):
         r = self._run('--include-current')
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn(f'拉到 {N_MESSAGES} 条消息', r.stdout)   # 分页必须拉全
+        self.assertIn('成功保留 6/7 张', r.stdout)             # 6 张正常 + 1 张失效链接
 
         tag = dt.date.today().strftime('%y%m%d')
-        out = (self.tmp_path / 'output' / GROUP_NAME / tag / f'{tag}.md')
+        day_dir = self.tmp_path / 'output' / GROUP_NAME / tag
+        out = day_dir / f'{tag}.md'
         self.assertTrue(out.exists(), f'输出文件不存在：{out}')
         text = out.read_text(encoding='utf-8')
         self.assertIn(MOCK_SUMMARY, text)                      # AI 摘要已写入
         self.assertIn('消息内容 0', text)                       # 最旧一条（翻页到底）
         self.assertIn(f'消息内容 {N_MESSAGES - 1}', text)       # 最新一条
         self.assertIn('点击展开完整记录', text)                  # 原始记录折叠块
+
+        # 图片保留：6 张成功，编号重排后 1..6；失效的那张还原为 [图片]
+        imgs = sorted((day_dir / 'images').glob('*.*'))
+        self.assertEqual(len(imgs), 6, [p.name for p in imgs])
+        self.assertIn('> 图片：6/7 张已保留', text)             # 元信息行
+        self.assertIn('大家看这张：![图片#1](images/001_', text)  # AI 引用被内嵌
+        self.assertIn('## 附：本期图片（6/7 张）', text)         # 文末图片列表
+        self.assertNotIn('[图片#7]', text)                      # 失败图片已回退
+        self.assertIn('[图片]', text)                           # 回退占位符存在
 
 
 if __name__ == '__main__':

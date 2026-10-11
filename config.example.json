@@ -12,5 +12,7 @@
   "output_dir": "./output",
   "day_start_hour": 12,
   "chunk_chars": 22000,
-  "max_tokens": 32000
+  "max_tokens": 32000,
+  "save_images": true,
+  "max_images": 100
 }

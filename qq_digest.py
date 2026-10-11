@@ -30,11 +30,15 @@ import datetime as dt
 import getpass
 import json
 import re
+import shutil
 import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+__version__ = '1.0.0'
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = SCRIPT_DIR / 'config.json'
@@ -66,6 +70,8 @@ def default_config() -> dict:
         'day_start_hour': 12,                    # 「一天」从几点开始
         'chunk_chars': 22000,                    # 超过该长度则分块总结
         'max_tokens': 32000,                     # 单次 AI 调用上限（推理模型要给足）
+        'save_images': True,                     # 保留聊天中的图片到本地
+        'max_images': 100,                       # 单期最多保留多少张
     }
 
 
@@ -308,9 +314,27 @@ def fetch_messages(napcat_api: str, token: str, group_id: str,
     return collected
 
 
-def extract_text(msg: dict) -> str:
-    """把一条消息转成可读文本（图片/表情/视频等只留占位符）。"""
+def _image_source(seg_data: dict) -> str | None:
+    """从 image 段落里取图片来源：优先 http url，其次 QQ 本地缓存路径。"""
+    url = seg_data.get('url')
+    if isinstance(url, str) and url.startswith('http'):
+        return url
+    f = seg_data.get('file')
+    if isinstance(f, str):
+        if f.startswith('http'):
+            return f
+        try:
+            if len(f) > 3 and Path(f).exists():
+                return f
+        except OSError:
+            pass
+    return None
+
+
+def extract_text(msg: dict) -> tuple[str, list[str | None]]:
+    """把一条消息转成可读文本；同时返回各图片段的来源（供下载）。"""
     parts = []
+    sources: list[str | None] = []
     for seg in msg.get('message') or []:
         t = seg.get('type')
         d = seg.get('data') or {}
@@ -321,6 +345,7 @@ def extract_text(msg: dict) -> str:
             parts.append(f'@{qq}' if qq and qq != 'all' else '@全体成员')
         elif t == 'image':
             parts.append('[图片]')
+            sources.append(_image_source(d))
         elif t == 'forward':
             parts.append('[合并转发]')
         elif t == 'file':
@@ -329,26 +354,156 @@ def extract_text(msg: dict) -> str:
             parts.append('[视频]')
         elif t == 'record':
             parts.append('[语音]')
-    return re.sub(r'\s+', ' ', ''.join(parts)).strip()
+    return re.sub(r'\s+', ' ', ''.join(parts)).strip(), sources
 
 
-def build_transcript(msgs: list[dict]) -> tuple[str, int]:
+def build_transcript(msgs: list[dict]) -> tuple[str, int, list[dict]]:
+    """构造纯文本记录；图片段记为 [图片#pid]，并返回待下载图片清单。"""
     lines = []
+    pending: list[dict] = []
     for m in msgs:
-        text = extract_text(m)
+        text, sources = extract_text(m)
         if not text:
             continue
         sender = m.get('sender') or {}
         name = sender.get('card') or sender.get('nickname') or str(m.get('user_id'))
+        for src in sources:
+            pid = len(pending) + 1
+            pending.append({'pid': pid, 'src': src,
+                            'who': str(name), 'ts': m.get('time', 0)})
+            text = text.replace('[图片]', f'[图片#{pid}]', 1)
         ts = dt.datetime.fromtimestamp(m.get('time', 0)).strftime('%m-%d %H:%M')
         lines.append(f'[{ts}] {name}: {text}')
-    return '\n'.join(lines), len(lines)
+    return '\n'.join(lines), len(lines), pending
 
 
 def sanitize_folder(name: str) -> str:
     """把群名转成可安全用作文件夹名的字符串。"""
     cleaned = re.sub(r'[\\/:*?"<>|\r\n]', '_', name).strip().strip('.')
     return cleaned
+
+
+# ============================== 图片保留 ==============================
+
+IMG_EXT_BY_CTYPE = {
+    'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif',
+    'image/webp': '.webp', 'image/bmp': '.bmp',
+}
+IMG_MAX_MB = 15          # 单张图片大小上限
+IMG_TIMEOUT = 25         # 单张下载超时（秒）
+IMG_WORKERS = 6          # 并发下载数
+
+
+def _fetch_image(src: str, dest: Path) -> str | None:
+    """下载（或复制）一张图片到 dest，成功返回 content-type（本地文件返回扩展名），失败返回 None。"""
+    if src.startswith('http'):
+        req = urllib.request.Request(src, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=IMG_TIMEOUT) as r:
+            ctype = (r.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            if ctype and not ctype.startswith('image/'):
+                return None
+            limit = int(IMG_MAX_MB * 1024 * 1024)
+            data = b''
+            while True:
+                chunk = r.read(256 * 1024)
+                if not chunk:
+                    break
+                data += chunk
+                if len(data) > limit:
+                    return None
+        dest.write_bytes(data)
+        return ctype or 'image/jpeg'
+    # 本地缓存路径直接复制
+    p = Path(src)
+    if p.stat().st_size > IMG_MAX_MB * 1024 * 1024:
+        return None
+    shutil.copyfile(p, dest)
+    return p.suffix.lstrip('.').lower() or 'jpg'
+
+
+def download_images(pending: list[dict], dest_dir: Path,
+                    max_images: int) -> dict[int, tuple[Path, str]]:
+    """并发下载待保留图片，返回 {pid: (临时文件, 类型)}；失败的不在结果里。"""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    cands = [p for p in pending if p.get('src')][:max(0, max_images)]
+    if not cands:
+        return {}
+
+    def work(p: dict):
+        tmp = dest_dir / f'.img_{p["pid"]:03d}.part'
+        try:
+            ctype = _fetch_image(p['src'], tmp)
+            if ctype:
+                return p['pid'], tmp, ctype
+        except Exception:
+            pass
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return p['pid'], None, None
+
+    results: dict[int, tuple[Path, str]] = {}
+    with ThreadPoolExecutor(max_workers=IMG_WORKERS) as ex:
+        for pid, tmp, ctype in ex.map(work, cands):
+            if tmp is not None:
+                results[pid] = (tmp, ctype)
+    return results
+
+
+def save_kept_images(pending: list[dict], results: dict,
+                     img_dir: Path) -> dict[int, dict]:
+    """把下载成功的图片按最终编号重命名，返回 {最终编号: 图片信息}。"""
+    files: dict[int, dict] = {}
+    for fid, pid in enumerate(sorted(results), 1):
+        tmp, ctype = results[pid]
+        info = pending[pid - 1]
+        ext = IMG_EXT_BY_CTYPE.get(ctype)
+        if not ext:
+            ext = Path(str(info['src'])).suffix.lower() or '.jpg'
+            if not ext.startswith('.'):
+                ext = '.' + ext
+        ts = dt.datetime.fromtimestamp(info['ts'])
+        who = sanitize_folder(info['who'])[:20] or '群友'
+        name = f'{fid:03d}_{ts:%H%M}_{who}{ext}'
+        tmp.replace(img_dir / name)
+        files[fid] = {'name': name, 'who': info['who'], 'ts': ts}
+    return files
+
+
+def remap_image_markers(transcript: str, pending: list[dict],
+                        results: dict) -> str:
+    """下载结束后重编号：成功的 pid → 最终编号，失败的还原为 [图片]。"""
+    pid2fid = {pid: fid for fid, pid in enumerate(sorted(results), 1)}
+
+    def _sub(m: re.Match) -> str:
+        pid = int(m.group(1))
+        return f'[图片#{pid2fid[pid]}]' if pid in pid2fid else '[图片]'
+
+    return re.sub(r'\[图片#(\d+)\]', _sub, transcript)
+
+
+def embed_images(summary: str, files: dict) -> str:
+    """把 AI 摘要中首次出现的图片编号替换为内嵌图片，其余保留文字标注。"""
+    for fid, info in sorted(files.items()):
+        for pat in (r'\[图片#%d\]', r'[（(]图片#%d[）)]', r'图片#%d(?!\d)'):
+            m = re.search(pat % fid, summary)
+            if m:
+                summary = (summary[:m.start()]
+                           + f'![图片#{fid}](images/{info["name"]})'
+                           + summary[m.end():])
+                break
+    return summary
+
+
+def build_gallery(files: dict) -> str:
+    """构造文末图片列表（Markdown）。"""
+    parts = []
+    for fid, info in sorted(files.items()):
+        ts = info['ts'].strftime('%m-%d %H:%M')
+        parts.append(f'**图片#{fid}** · {info["who"]} · {ts}\n\n'
+                     f'![图片#{fid}](images/{info["name"]})\n')
+    return '\n'.join(parts)
 
 
 # ============================== AI 总结 ==============================
@@ -368,6 +523,7 @@ CHUNK_PROMPT = """你是群聊内容整理助手。下面是 QQ 群「{group_nam
 
 注意：
 - 忠实原始记录，不要编造
+- 记录中的「[图片#n]」是聊天中图片的编号。若上下文明显在讨论某张图（比如发图后大家围着聊），在相应话题处标注（图片#n）；看不出来图的就别提，**严禁臆测图片内容**
 - 不要客套话和总结性空话，直接给信息
 - 这部分大约 {count} 条发言
 
@@ -397,6 +553,7 @@ FINAL_PROMPT = """下面是 QQ 群「{group_name}」在 {period} 的分段摘要
 要求：
 - 合并时去重，但不要丢失信息
 - 忠实原始记录，不编造
+- 分段摘要中的「图片#n」编号标注要保留，读者可对照文末图片列表查看原图
 - 语言简洁，重点是信息密度
 
 分段摘要如下：
@@ -583,16 +740,35 @@ def run_group(g: dict, cfg: dict, label: dt.date, start_ts: float,
     log(f'日期标签：{label.isoformat()}')
     log('=' * 64)
 
-    log('[1/3] 拉取聊天记录（分页回溯）...')
+    log('[1/4] 拉取聊天记录（分页回溯）...')
     t0 = time.time()
     msgs = fetch_messages(cfg['napcat_api'], cfg.get('napcat_token') or '',
                           gid, start_ts, end_ts, args.max)
     if not msgs:
         log('  区间内没有消息，跳过。')
         return 1
-    transcript, line_count = build_transcript(msgs)
+    transcript, line_count, pending = build_transcript(msgs)
     log(f'  拉到 {len(msgs)} 条消息，有效发言 {line_count} 条，'
         f'{len(transcript)} 字符，耗时 {time.time() - t0:.1f}s')
+
+    # 输出目录提前确定，图片就下在 md 旁边
+    tag = label.strftime('%y%m%d')
+    folder_name = sanitize_folder(gname) or gid
+    folder = Path(cfg.get('output_dir') or './output') / folder_name / tag
+
+    # 保留图片：下载成功才给正式编号，失败还原为 [图片]
+    files: dict[int, dict] = {}
+    if pending and not args.dry_run and cfg.get('save_images', True) \
+            and not getattr(args, 'no_images', False):
+        max_images = int(cfg.get('max_images') or 100)
+        log(f'[2/4] 保留图片：发现 {len(pending)} 张（上限 {max_images} 张）...')
+        results = download_images(pending, folder / 'images', max_images)
+        if results:
+            transcript = remap_image_markers(transcript, pending, results)
+            files = save_kept_images(pending, results, folder / 'images')
+            log(f'  成功保留 {len(files)}/{len(pending)} 张')
+        else:
+            log('  没有图片下载成功（历史图片链接可能已过期），继续纯文字总结')
 
     if args.dry_run:
         log('  --dry-run：只统计不总结。最近 10 条预览：')
@@ -600,7 +776,7 @@ def run_group(g: dict, cfg: dict, label: dt.date, start_ts: float,
             log(f'    {line}')
         return 0
 
-    log('[2/3] 调用 AI 总结...')
+    log('[3/4] 调用 AI 总结...')
     t1 = time.time()
     try:
         summary = ai_summarize(cfg['ai'], display, period, transcript,
@@ -609,14 +785,28 @@ def run_group(g: dict, cfg: dict, label: dt.date, start_ts: float,
     except RuntimeError as e:
         log(f'  {e}')
         return 1
+    if files:
+        summary = embed_images(summary, files)
     log(f'  完成，{len(summary)} 字符，耗时 {time.time() - t1:.1f}s')
 
-    log('[3/3] 写入文件...')
-    tag = label.strftime('%y%m%d')
-    folder_name = sanitize_folder(gname) or gid
-    folder = Path(cfg.get('output_dir') or './output') / folder_name / tag
+    log('[4/4] 写入文件...')
     folder.mkdir(parents=True, exist_ok=True)
     out_file = folder / f'{tag}.md'
+
+    img_meta = f'> 图片：{len(files)}/{len(pending)} 张已保留\n' if pending else ''
+    img_section = ''
+    if files:
+        img_section = f"""---
+
+## 附：本期图片（{len(files)}/{len(pending)} 张）
+
+<details>
+<summary>点击展开图片列表（正文中已内嵌 AI 引用的图片）</summary>
+
+{build_gallery(files)}
+
+</details>
+"""
 
     out_file.write_text(f"""# {display} 群聊总结 - {label.isoformat()}
 
@@ -624,13 +814,13 @@ def run_group(g: dict, cfg: dict, label: dt.date, start_ts: float,
 > 时间区间：{period}
 > 生成时间：{dt.datetime.now():%Y-%m-%d %H:%M:%S}
 > 有效发言：{line_count} 条
-> AI 模型：{cfg['ai']['model']}
+{img_meta}> AI 模型：{cfg['ai']['model']}
 
 ---
 
 {summary}
 
----
+{img_section}---
 
 ## 附：原始聊天记录
 
@@ -677,6 +867,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--max', type=int, default=60000, help='每个群最多拉取条数')
     ap.add_argument('--include-current', action='store_true',
                     help='允许总结尚未结束的当前周期')
+    ap.add_argument('--no-images', action='store_true',
+                    help='本次不保留图片（覆盖配置里的 save_images）')
+    ap.add_argument('--version', action='version',
+                    version=f'%(prog)s {__version__}')
     args = ap.parse_args(argv)
 
     path = Path(args.config)

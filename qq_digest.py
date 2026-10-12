@@ -20,7 +20,8 @@
     python qq_digest.py --setup          # 重新运行配置向导
 
 依赖
-    Python 3.10+，仅标准库，无任何第三方依赖。
+    Python 3.8+（推荐 3.12），仅标准库，无任何第三方依赖。
+    图形界面版见 qq_gui.py，逻辑与命令行完全一致。
 """
 
 from __future__ import annotations
@@ -38,7 +39,11 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
+
+if sys.version_info < (3, 8):
+    sys.stderr.write('需要 Python 3.8 或更高版本，当前为 %s\n' % sys.version.split()[0])
+    raise SystemExit(1)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = SCRIPT_DIR / 'config.json'
@@ -728,7 +733,8 @@ def cmd_check(cfg: dict, groups: list[dict]) -> int:
 # ============================== 主流程 ==============================
 
 def run_group(g: dict, cfg: dict, label: dt.date, start_ts: float,
-              end_ts: float, period: str, args) -> int:
+              end_ts: float, period: str, max_count: int,
+              dry_run: bool = False, no_images: bool = False) -> int:
     """总结单个群，返回 0 成功 / 1 跳过或失败。"""
     gid = str(g['id'])
     gname = str(g.get('name') or '')
@@ -743,7 +749,7 @@ def run_group(g: dict, cfg: dict, label: dt.date, start_ts: float,
     log('[1/4] 拉取聊天记录（分页回溯）...')
     t0 = time.time()
     msgs = fetch_messages(cfg['napcat_api'], cfg.get('napcat_token') or '',
-                          gid, start_ts, end_ts, args.max)
+                          gid, start_ts, end_ts, max_count)
     if not msgs:
         log('  区间内没有消息，跳过。')
         return 1
@@ -758,8 +764,8 @@ def run_group(g: dict, cfg: dict, label: dt.date, start_ts: float,
 
     # 保留图片：下载成功才给正式编号，失败还原为 [图片]
     files: dict[int, dict] = {}
-    if pending and not args.dry_run and cfg.get('save_images', True) \
-            and not getattr(args, 'no_images', False):
+    if pending and not dry_run and cfg.get('save_images', True) \
+            and not no_images:
         max_images = int(cfg.get('max_images') or 100)
         log(f'[2/4] 保留图片：发现 {len(pending)} 张（上限 {max_images} 张）...')
         results = download_images(pending, folder / 'images', max_images)
@@ -770,7 +776,7 @@ def run_group(g: dict, cfg: dict, label: dt.date, start_ts: float,
         else:
             log('  没有图片下载成功（历史图片链接可能已过期），继续纯文字总结')
 
-    if args.dry_run:
+    if dry_run:
         log('  --dry-run：只统计不总结。最近 10 条预览：')
         for line in transcript.split('\n')[-10:]:
             log(f'    {line}')
@@ -934,7 +940,8 @@ def main(argv: list[str] | None = None) -> int:
         if len(groups) > 1:
             log(f'\n>>> 第 {i}/{len(groups)} 个群')
         try:
-            if run_group(g, cfg, label, start_ts, end_ts, period, args) != 0:
+            if run_group(g, cfg, label, start_ts, end_ts, period, args.max,
+                         args.dry_run, args.no_images) != 0:
                 failed += 1
         except KeyboardInterrupt:
             raise

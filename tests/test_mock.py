@@ -38,16 +38,23 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+def _current_period_start() -> dt.datetime:
+    """当前周期的起点（与 qq_digest 的 --include-current 口径一致）。"""
+    now = dt.datetime.now()
+    label = (now - dt.timedelta(hours=12)).date()   # 当前周期标签
+    return dt.datetime.combine(label, dt.time(hour=12))
+
+
 def _build_messages(napcat_port: int) -> list[dict]:
-    """构造 N 条落在「今天 12:00 ~ 次日 12:00」区间内的消息。
+    """构造 N 条落在「当前周期」内的消息。
 
     其中 6 条带可下载图片（i % 50 == 0），1 条带失效图片链接（i == 77），
     用于验证图片下载、编号重排与失败回退。
     """
-    start = dt.datetime.combine(dt.date.today(), dt.time(hour=12, minute=0))
+    start = _current_period_start()
     msgs = []
     for i in range(N_MESSAGES):
-        ts = start + dt.timedelta(minutes=4 * i + 60)   # 从 13:00 开始，300 条 ≈ 20 小时，全部落在周期内
+        ts = start + dt.timedelta(minutes=4 * i + 60)   # 从周期起点后 1 小时开始，300 条 ≈ 20 小时
         segs = [{'type': 'text', 'data': {'text': f'消息内容 {i}'}}]
         if i % 50 == 0:
             segs.append({'type': 'image',
@@ -207,7 +214,7 @@ class EndToEndTest(unittest.TestCase):
         self.assertIn(f'拉到 {N_MESSAGES} 条消息', r.stdout)   # 分页必须拉全
         self.assertIn('成功保留 6/7 张', r.stdout)             # 6 张正常 + 1 张失效链接
 
-        tag = dt.date.today().strftime('%y%m%d')
+        tag = _current_period_start().strftime('%y%m%d')
         day_dir = self.tmp_path / 'output' / GROUP_NAME / tag
         out = day_dir / f'{tag}.md'
         self.assertTrue(out.exists(), f'输出文件不存在：{out}')

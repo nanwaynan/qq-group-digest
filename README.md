@@ -1,22 +1,24 @@
-# QQ 群聊总结器 v1.0（qq-group-digest）
+# QQ 群聊总结器 v1.1（qq-group-digest）
 
-**双击一个脚本，把群里一整天的聊天记录变成一份可以永久保存的 Markdown 总结** —— AI 生成、重点图片保留、按日归档；不发群、无定时、零第三方依赖，你的 API Key 只存在你自己电脑上。
+**双击一个脚本，把群里一整天的聊天记录变成一份可以永久保存的 Markdown 总结** —— 有图形界面、AI 生成、重点图片保留、按日归档；不发群、无定时、零第三方依赖，你的 API Key 只存在你自己电脑上。
 
 [![Release](https://img.shields.io/github/v/release/nanwaynan/qq-group-digest?label=release&color=2ea043)](https://github.com/nanwaynan/qq-group-digest/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078d4)]()
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab)](https://www.python.org/downloads/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078d4)]()
+[![Python](https://img.shields.io/badge/python-3.8%2B-3776ab)](https://www.python.org/downloads/)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)]()
+[![界面](https://img.shields.io/badge/界面-图形%20%2B%20命令行-blueviolet)]()
 [![向群聊发消息](https://img.shields.io/badge/向群聊发消息-0-red)]()
 [![定时任务](https://img.shields.io/badge/定时任务-0-red)]()
 [![遥测上报](https://img.shields.io/badge/遥测上报-0-red)]()
 
-> ## 📌 当前状态（v1.0 · 2026-10-11）
-> - **核心流程已实测可用** —— 单日数千条消息完整回溯、分块总结再汇总、按日归档，全部跑通。
-> - **图片保留** —— 群里的重要图片会存到本地并在总结中内嵌，不再是一排 `[图片]` 占位符。
-> - **多群支持** —— 配置里加几个群就总结几个群，一次跑完。
-> - **微信版、图形界面** 在计划中，见文末「开发计划」。
-> - **完全不懂电脑？** 照着下面「手把手教程」一步步抄就行，每一步点什么、填什么都写清了。
+> ## 📌 当前状态（v1.1 · 2026-10-12）
+> - **图形界面版来了** —— 双击 `启动.bat`（Windows）/ `启动.command`（macOS）打开窗口，点按钮就能用，不用敲命令。
+> - **版本门槛降到 Python 3.8** —— 在真实的 Python 3.8.10 上跑通全部测试，老电脑不用升级 Python。
+> - **没装 Python 也不会卡住** —— 启动脚本会自动打开官网下载页并提示安装要点。
+> - **macOS 支持** —— 同样的功能，`启动.command` 双击即用。
+> - **核心流程已实测可用** —— 单日数千条消息完整回溯、分块总结再汇总、按日归档。
+> - **微信版** 在计划中，见文末「开发计划」。
 
 > ## ⚠️ 使用前提（务必先读）
 > 本工具只读取**你登录的 QQ 账号有权查看**的群聊记录，请遵守当地法律法规与平台用户协议，仅用于整理自己有权访问的群聊；使用产生的一切后果由使用者自行承担。完整说明见文末免责声明。
@@ -29,22 +31,27 @@
 
 ## 为什么值得一试
 
+- 🖥️ **有图形界面** —— 双击即开的窗口：配置向导、一次点击开始总结、实时日志、检测连通性、一键打开输出目录；也保留完整的命令行用法
 - 📥 **完整回溯** —— 自动分页拉取指定群一整天（12:00 ~ 次日 12:00）的全部记录，单日数千条不漏；单页失败自动跳过重试，不会前功尽弃
 - 🖼️ **图片保留** —— 聊天中的图片自动存到本地，AI 引用到的图片直接内嵌在总结正文里，其余的收进文末图片列表
 - 🧠 **AI 深度总结** —— 结构化报告：本期概览 / 主要话题 / 有价值的信息 / 精彩发言 / 活跃成员
 - 📄 **长文分块** —— 记录过长自动分块总结再汇总，避免上下文截断丢信息；推理模型的 token 配额坑已处理
 - 🗂️ **按日归档 + 多群** —— `output/<群名>/<YYMMDD>/<YYMMDD>.md`，一天一个文件夹，几个群一起跑
-- 🔒 **纯本地 & 零依赖** —— 不发群、无定时、无自启、无遥测；纯 Python 标准库，装个 Python 就能跑
+- 🐍 **Python 3.8 就能跑** —— 门槛低到没有更新过 Python 的老电脑也能直接跑；纯标准库，零第三方依赖
+- 🍎 **Windows / macOS / Linux** —— 三个平台同一份代码，各自有双击启动脚本
+- 🔒 **纯本地 & 零遥测** —— 不发群、无定时、无自启；Key 只存在本机 `config.json`
 - 🩺 **一条命令自检** —— `--check` 验证 NapCat、登录账号、群成员身份、AI 接口、输出目录
-- 🙈 **Key 不出本机** —— 首次运行向导式输入，Key 只写进本地 `config.json`（已被 .gitignore 排除），全文可审计
 
 ## 手把手教程（零基础照着做就行）
 
-> 已经会装软件跑脚本的老手，直接看「命令行」一节即可。
+> 已经会装软件跑脚本的老手，直接看「图形界面」或「命令行」一节即可。
 
 ### 第 1 步：安装 Python（一次性，5 分钟）
 
+**怎么知道自己装没装？** 双击项目里的 `启动.bat`，如果提示「没有检测到 Python」，就按下面装一遍（脚本会自动帮你打开下载页）。
+
 1. 打开官网下载页：https://www.python.org/downloads/ → 点黄色大按钮 **Download Python 3.12.x**，得到一个 `.exe` 安装包
+   （你的电脑比较老、装不上新版也没关系：**本项目支持 Python 3.8 及以上**，在下载页往下翻找 3.8.x 的 Windows installer 也可以）
 2. 双击安装包，**第一屏最下面务必勾选 ☑ `Add python.exe to PATH`**（很多人卡死在这一步），然后点 `Install Now`，一路下一步
 3. 验证装好了：按键盘 `Win + R` → 输入 `cmd` → 回车，在黑色窗口里输入：
 
@@ -52,7 +59,9 @@
    python --version
    ```
 
-   显示 `Python 3.12.x` 之类的版本号就是成功了。如果提示"不是内部或外部命令"，重新运行安装包、勾上那个 PATH 选项再装一遍。
+   显示 `Python 3.12.x`（或 3.8 以上任意版本）就是成功了。如果提示"不是内部或外部命令"，重新运行安装包、勾上那个 PATH 选项再装一遍。
+
+> 装完回到项目文件夹，**再双击一次 `启动.bat`**，就能看到图形界面了。
 
 ### 第 2 步：安装 QQ 和 NapCat，用小号登录（一次性，10 分钟）
 
@@ -69,25 +78,21 @@
 
 （会用 git 的朋友：`git clone https://github.com/nanwaynan/qq-group-digest.git` 效果一样）
 
-### 第 4 步：双击 `启动.bat`，按向导填写（一次性，5 分钟）
+### 第 4 步：双击启动，在窗口里填配置（一次性，5 分钟）
 
-双击文件夹里的 **`启动.bat`**，第一次运行会自动进入配置向导。它会依次问你 8 个问题，照着这张表填：
+双击文件夹里的 **`启动.bat`**，会弹出一个窗口（不需要敲任何命令）。第一次打开配置向导，按标签页填三块：
 
-| 向导问你 | 怎么填 | 示例 |
-|---|---|---|
-| NapCat API 地址 | **直接回车**（默认就是本机 3000 端口） | `http://127.0.0.1:3000` |
-| NapCat Token | 上一步没设 token 就**直接回车** | （空） |
-| 要总结的群号 | 填小号所在的那个群的群号（QQ 里打开群聊 → 右上角群资料里能看到） | `123456789` |
-| 群名称/备注 | 随意，会用作文件夹名；直接回车也行 | `技术交流群` |
-| 继续添加其他群？ | 还有群要总结按 `y` 继续加；没有就回车 | `n` |
-| AI 接口地址 | 你的大模型服务商给的「OpenAI 兼容」地址，**结尾带 `/v1`** | `https://api.deepseek.com/v1` |
-| 模型名 | 服务商后台模型列表里的名字 | `deepseek-chat` |
-| API Key | 服务商后台创建的密钥，粘贴后回车（**输入时不显示是防偷看设计，正常**） | `sk-xxxxxxxx` |
-| 总结保存目录 | **直接回车**用默认 | `./output` |
+| 标签页 | 填什么 |
+|---|---|
+| **1. 连接设置** | NapCat 地址保持默认 `http://127.0.0.1:3000` 就行；没设过 Token 就留空；保存目录保持 `./output` |
+| **2. 要总结的群** | 每行一个群：`群号,群名称`（群号在 QQ 里打开该群 → 右上角群资料能看到），群名称可省略 |
+| **3. AI 接口** | 接口地址（**结尾带 `/v1`**）、模型名、API Key |
 
-> **没有大模型 API？** 任意「OpenAI 兼容」服务商都行：云端如 DeepSeek、硅基流动、OpenAI 等（注册后在后台创建 Key）；本地如 Ollama（地址填 `http://127.0.0.1:11434/v1`）。本工具只负责把内容发到**你自己填的**这个地址。
+填完点「保存并关闭」，回到主界面点 **▶ 开始总结**，右侧会实时滚动日志，跑完会问你要不要打开输出目录。
 
-填完向导会立刻开始第一次总结，屏幕滚动都是在干活，等它跑完即可。
+> **没有大模型 API？** 任意「OpenAI 兼容」服务商都行：云端如 DeepSeek（`https://api.deepseek.com/v1` + `deepseek-chat`）、硅基流动、OpenAI 等；本地如 Ollama（`http://127.0.0.1:11434/v1`）。本工具只把内容发到**你自己填的**这个地址。
+
+主界面其他按钮：**连通性检测**（先点这个，它会告诉你 NapCat 通不通、小号在不在群里、AI 能不能用）、**配置向导**（改配置）、**打开输出目录**、**更多选项**（选日期、限制条数、临时关掉图片）。
 
 ### 第 5 步：看结果
 
@@ -98,7 +103,44 @@
 就两件事：
 
 1. 电脑重启过的话，先启动 NapCat 并确认小号在线
-2. 双击 **`启动.bat`**，等跑完去 `output\` 看当天的总结
+2. 双击 **`启动.bat`**，点「开始总结」，跑完去 `output\` 看当天的总结
+
+## 图形界面
+
+Windows 双击 `启动.bat`、macOS 双击 `启动.command` 即打开界面（命令行 `python qq_gui.py` 也可以）：
+
+| 按钮 | 作用 |
+|---|---|
+| **▶ 开始总结** | 按当前配置总结最近一个已结束的完整周期，日志实时显示，完成后可一键打开输出目录 |
+| **连通性检测** | 检查 NapCat 连接、登录账号、小号是否在目标群、AI 接口是否可用、输出目录能否写入 |
+| **配置向导** | 分三个标签页修改：连接设置 / 要总结的群 / AI 接口 |
+| **打开输出目录** | 直接跳转到总结文件所在文件夹 |
+| **更多选项** | 指定某一天、总结当前未结束周期、限制拉取条数、临时关闭图片保留 |
+
+界面用 Python 自带的 tkinter 绘制，**不需要安装任何第三方库**。如果你的 Python 缺少 tkinter（少见），启动脚本会自动退回命令行模式并提示怎么补装。
+
+## macOS / Linux 使用说明
+
+功能与 Windows 完全一致，启动脚本换成 `启动.command`：
+
+**macOS：**
+
+1. **安装 Python**：macOS 自带的 `python3` 版本通常够用（3.8+）。不确定就先跑一次，脚本会检测；
+   不足 3.8 时它会提示你去 https://www.python.org/downloads/ 下载安装（或 `brew install python3`）
+2. **下载项目**：`Code → Download ZIP` 解压
+3. **首次运行**：双击 `启动.command`。macOS 可能提示「无法打开，因为它来自身份不明的开发者」——右键点它 → 选「打开」→ 再点「打开」即可（只需一次）；
+   或先在终端执行一次：`chmod +x 启动.command`
+4. **NapCat**：Linux/macOS 上 NapCat 的安装方式见其官方文档（有 Docker 版），同样需要开启 HTTP 服务器指向 `127.0.0.1:3000`
+
+**Linux（Ubuntu/Debian）：**
+
+```bash
+sudo apt install python3 python3-tk     # tkinter 需要单独装（Ubuntu 默认不带）
+chmod +x 启动.command
+./启动.command                           # 或在文件管理器里双击
+```
+
+缺少 tkinter 时脚本会自动退回命令行（`python3 qq_digest.py`），功能一样。
 
 ## 总结文件放在哪
 
@@ -189,8 +231,10 @@ python tests/test_mock.py
 
 ```
 qq-group-digest/
-├─ qq_digest.py            核心脚本（纯标准库，唯一必需）
-├─ 启动.bat                Windows 双击入口（首次运行自动进配置向导）
+├─ qq_gui.py               图形界面（双击启动脚本时打开的就是它）
+├─ qq_digest.py            核心脚本 / 命令行入口（纯标准库，唯一必需）
+├─ 启动.bat                Windows 双击入口（图形界面；没装 Python 会自动打开下载页）
+├─ 启动.command            macOS / Linux 双击入口
 ├─ config.example.json     配置模板（复制为 config.json 使用）
 ├─ config.json             本地配置（含 Key，自动生成，不会上传）
 ├─ tests/test_mock.py      端到端自测
@@ -210,7 +254,16 @@ qq-group-digest/
 主号零改动、零风险。小号拉进目标群即可，拉历史的前提是该账号能看到群历史消息。
 
 **Q：双击 `启动.bat` 提示"未找到 Python"？**
-第 1 步的 Python 没装好，多半是没勾 `Add python.exe to PATH`，重新装一遍并勾选。
+脚本会自动打开 Python 官网下载页。装的时候**务必勾选 `Add python.exe to PATH`**，装完再双击一次即可。
+
+**Q：我的电脑很老，装不上新版 Python？**
+本项目支持 **Python 3.8 及以上**（已在真实 3.8.10 环境跑通全部测试）。在 Python 官网下载页往下翻，找 3.8.x 的 Windows installer 安装即可。
+
+**Q：图形界面打不开 / 提示缺少 tkinter？**
+启动脚本会自动退回命令行模式（功能完全一样）。想修复图形界面：从 python.org 重新安装 Python 并勾选 tcl/tk 组件；Linux 上执行 `sudo apt install python3-tk`，macOS 上 `brew install python-tk`。
+
+**Q：苹果电脑能用吗？**
+能。下载项目后双击 `启动.command`（首次可能需要右键 → 打开）。详见「macOS / Linux 使用说明」。
 
 **Q：总结内容异常偏少或为空？**
 ① AI 侧 `max_tokens` 太小，推理模型（DeepSeek-R1 等）思维链吃光预算导致正文为空——把配置里 `max_tokens` 调大；② NapCat 没开 HTTP 服务或 token 不匹配，跑 `--check` 看。
@@ -232,17 +285,17 @@ qq-group-digest/
 
 ## 开发计划
 
-- ✅ **v1.0**（当前）—— 单群/多群总结、图片保留、连通性自检、按日归档
+- ✅ **v1.0** —— 单群/多群总结、图片保留、连通性自检、按日归档
+- ✅ **v1.1**（当前）—— 图形界面、Python 3.8 支持、没装 Python 时的下载引导、macOS/Linux 启动脚本
 - ⏳ **微信版** —— 同类能力适配微信（调研中，方案确定后发布）
-- ⏳ **图形界面** —— 不想碰命令行的用户也能用
-- ⏳ **可选定时归档**、更多模型适配、总结质量调优
+- ⏳ **可选定时归档**、打包成免安装 exe（不用自己装 Python）、更多模型适配
 - 💡 有想要的功能？去 [Issues](https://github.com/nanwaynan/qq-group-digest/issues) 提
 
 ## 交流 & 支持
 
 - **GitHub Issues**：[提问题 / 反馈](https://github.com/nanwaynan/qq-group-digest/issues)
 
-> 跑不通？先执行 `python qq_digest.py --check`，把输出连同报错一起贴到 Issues，定位快很多。
+> 跑不通？先点界面上的「连通性检测」（或命令行 `python qq_digest.py --check`），把输出连同报错一起贴到 Issues，定位快很多。
 
 ## 免责声明
 

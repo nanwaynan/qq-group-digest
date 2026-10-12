@@ -1,0 +1,13 @@
+# Windows 批处理：必须是 GBK 编码 + CRLF 换行，且禁止 git 做任何转换
+# 原因：cmd.exe 按字节解析 bat 文件，编码/换行不对会直接导致中文乱码
+# -text = 原样存储（仓库、clone、ZIP 下载拿到的字节完全一致）
+*.bat  -text
+
+# Shell 脚本（macOS / Linux）：保持 LF
+*.command text eol=lf
+*.sh      text eol=lf
+
+# 其余文本统一 LF 存储
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
